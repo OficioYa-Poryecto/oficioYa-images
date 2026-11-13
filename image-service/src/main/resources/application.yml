@@ -1,0 +1,28 @@
+server:
+  port: ${PORT:8082}
+
+spring:
+  application:
+    name: image-service
+  data:
+    mongodb:
+      uri: ${MONGODB_URI:mongodb://localhost:27017/oficioyaService}
+  servlet:
+    multipart:
+      max-file-size: 5MB
+      max-request-size: 20MB
+
+jwt:
+  secret: ${JWT_SECRET:MDEyMzQ1Njc4OTAxMjM0NTY3ODkwMTIzNDU2Nzg5MDEyMzQ1Njc4OTAxMjM0NTY3ODkwMTIzNDU2Nzg5MDE=}
+
+springdoc:
+  api-docs:
+    path: /v3/api-docs
+  swagger-ui:
+    path: /swagger-ui.html
+
+logging:
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n"
+  level:
+    eci.edu.dosw: INFO

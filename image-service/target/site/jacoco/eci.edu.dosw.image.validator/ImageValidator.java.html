@@ -1,0 +1,66 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>ImageValidator.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">image-service</a> &gt; <a href="index.source.html" class="el_package">eci.edu.dosw.image.validator</a> &gt; <span class="el_source">ImageValidator.java</span></div><h1>ImageValidator.java</h1><pre class="source lang-java linenums">package eci.edu.dosw.image.validator;
+
+import org.springframework.stereotype.Component;
+
+/**
+ * Valida el tipo real de un archivo de imagen inspeccionando sus bytes iniciales (magic numbers).
+ * NO confia en la extension del archivo ni en el Content-Type enviado por el cliente.
+ *
+ * Tipos soportados: JPEG, PNG, WebP.
+ * Tamano maximo: 5 MB (configurable mediante MAX_FILE_SIZE).
+ */
+@Component
+<span class="fc" id="L13">public class ImageValidator {</span>
+
+    static final long MAX_FILE_SIZE = 5L * 1024 * 1024; // 5 MB
+
+    // Cuotas por tipo de imagen
+    static final long MAX_REQUEST_IMAGES = 10;
+    static final long MAX_REPORT_IMAGES = 10;
+
+    /**
+     * Verifica tamano y detecta el Content-Type real del archivo.
+     * @return Content-Type real: &quot;image/jpeg&quot;, &quot;image/png&quot; o &quot;image/webp&quot;
+     * @throws IllegalArgumentException si el archivo esta vacio, es demasiado grande o no es una imagen valida
+     */
+    public String validateAndDetectContentType(byte[] data) {
+<span class="fc bfc" id="L27" title="All 4 branches covered.">        if (data == null || data.length == 0) {</span>
+<span class="fc" id="L28">            throw new IllegalArgumentException(&quot;El archivo de imagen esta vacio&quot;);</span>
+        }
+<span class="fc bfc" id="L30" title="All 2 branches covered.">        if (data.length &gt; MAX_FILE_SIZE) {</span>
+<span class="fc" id="L31">            throw new IllegalArgumentException(</span>
+                    &quot;La imagen supera el tamano maximo permitido de 5 MB (recibido: &quot; + data.length + &quot; bytes)&quot;);
+        }
+
+<span class="fc bfc" id="L35" title="All 2 branches covered.">        if (isJpeg(data)) return &quot;image/jpeg&quot;;</span>
+<span class="fc bfc" id="L36" title="All 2 branches covered.">        if (isPng(data))  return &quot;image/png&quot;;</span>
+<span class="fc bfc" id="L37" title="All 2 branches covered.">        if (isWebp(data)) return &quot;image/webp&quot;;</span>
+
+<span class="fc" id="L39">        throw new IllegalArgumentException(</span>
+                &quot;Formato no soportado. Solo se aceptan imagenes JPEG, PNG o WebP&quot;);
+    }
+
+    // JPEG: 0xFF 0xD8 0xFF
+    private boolean isJpeg(byte[] b) {
+<span class="pc bpc" id="L45" title="3 of 8 branches missed.">        return b.length &gt;= 3</span>
+                &amp;&amp; (b[0] &amp; 0xFF) == 0xFF
+                &amp;&amp; (b[1] &amp; 0xFF) == 0xD8
+                &amp;&amp; (b[2] &amp; 0xFF) == 0xFF;
+    }
+
+    // PNG: 0x89 P N G \r \n 0x1A \n
+    private boolean isPng(byte[] b) {
+<span class="pc bpc" id="L53" title="7 of 18 branches missed.">        return b.length &gt;= 8</span>
+                &amp;&amp; (b[0] &amp; 0xFF) == 0x89
+                &amp;&amp; b[1] == 'P' &amp;&amp; b[2] == 'N' &amp;&amp; b[3] == 'G'
+                &amp;&amp; b[4] == 0x0D &amp;&amp; b[5] == 0x0A &amp;&amp; b[6] == 0x1A &amp;&amp; b[7] == 0x0A;
+    }
+
+    // WebP: R I F F .... W E B P
+    private boolean isWebp(byte[] b) {
+<span class="pc bpc" id="L61" title="8 of 18 branches missed.">        return b.length &gt;= 12</span>
+                &amp;&amp; b[0] == 'R' &amp;&amp; b[1] == 'I' &amp;&amp; b[2] == 'F' &amp;&amp; b[3] == 'F'
+                &amp;&amp; b[8] == 'W' &amp;&amp; b[9] == 'E' &amp;&amp; b[10] == 'B' &amp;&amp; b[11] == 'P';
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.13.202504020838</span></div></body></html>

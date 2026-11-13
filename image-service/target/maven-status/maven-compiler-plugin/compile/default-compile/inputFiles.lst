@@ -1,0 +1,17 @@
+C:\Users\Javier\Documents\GitHub\OficioYaOrchestor\image-service\src\main\java\eci\edu\dosw\image\controller\ErrorResponse.java
+C:\Users\Javier\Documents\GitHub\OficioYaOrchestor\image-service\src\main\java\eci\edu\dosw\image\controller\GlobalExceptionHandler.java
+C:\Users\Javier\Documents\GitHub\OficioYaOrchestor\image-service\src\main\java\eci\edu\dosw\image\controller\ImageController.java
+C:\Users\Javier\Documents\GitHub\OficioYaOrchestor\image-service\src\main\java\eci\edu\dosw\image\dto\ImageResponseDTO.java
+C:\Users\Javier\Documents\GitHub\OficioYaOrchestor\image-service\src\main\java\eci\edu\dosw\image\exception\ImageNotFoundException.java
+C:\Users\Javier\Documents\GitHub\OficioYaOrchestor\image-service\src\main\java\eci\edu\dosw\image\exception\ImageQuotaExceededException.java
+C:\Users\Javier\Documents\GitHub\OficioYaOrchestor\image-service\src\main\java\eci\edu\dosw\image\exception\InvalidImageException.java
+C:\Users\Javier\Documents\GitHub\OficioYaOrchestor\image-service\src\main\java\eci\edu\dosw\image\ImageServiceApplication.java
+C:\Users\Javier\Documents\GitHub\OficioYaOrchestor\image-service\src\main\java\eci\edu\dosw\image\model\ImageDocument.java
+C:\Users\Javier\Documents\GitHub\OficioYaOrchestor\image-service\src\main\java\eci\edu\dosw\image\model\ImageType.java
+C:\Users\Javier\Documents\GitHub\OficioYaOrchestor\image-service\src\main\java\eci\edu\dosw\image\repository\ImageRepository.java
+C:\Users\Javier\Documents\GitHub\OficioYaOrchestor\image-service\src\main\java\eci\edu\dosw\image\security\ImageJwtAuthFilter.java
+C:\Users\Javier\Documents\GitHub\OficioYaOrchestor\image-service\src\main\java\eci\edu\dosw\image\security\RestAccessDeniedHandler.java
+C:\Users\Javier\Documents\GitHub\OficioYaOrchestor\image-service\src\main\java\eci\edu\dosw\image\security\RestAuthenticationEntryPoint.java
+C:\Users\Javier\Documents\GitHub\OficioYaOrchestor\image-service\src\main\java\eci\edu\dosw\image\security\SecurityConfig.java
+C:\Users\Javier\Documents\GitHub\OficioYaOrchestor\image-service\src\main\java\eci\edu\dosw\image\service\ImageStorageService.java
+C:\Users\Javier\Documents\GitHub\OficioYaOrchestor\image-service\src\main\java\eci\edu\dosw\image\validator\ImageValidator.java

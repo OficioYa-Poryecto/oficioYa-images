@@ -1,0 +1,161 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>ImageStorageService.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">image-service</a> &gt; <a href="index.source.html" class="el_package">eci.edu.dosw.image.service</a> &gt; <span class="el_source">ImageStorageService.java</span></div><h1>ImageStorageService.java</h1><pre class="source lang-java linenums">package eci.edu.dosw.image.service;
+
+import eci.edu.dosw.image.dto.ImageResponseDTO;
+import eci.edu.dosw.image.exception.ImageNotFoundException;
+import eci.edu.dosw.image.exception.ImageQuotaExceededException;
+import eci.edu.dosw.image.exception.InvalidImageException;
+import eci.edu.dosw.image.model.ImageDocument;
+import eci.edu.dosw.image.model.ImageType;
+import eci.edu.dosw.image.repository.ImageRepository;
+import eci.edu.dosw.image.validator.ImageValidator;
+import org.springframework.stereotype.Service;
+import org.springframework.web.multipart.MultipartFile;
+
+import java.io.IOException;
+import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.UUID;
+
+@Service
+public class ImageStorageService {
+
+    private static final long MAX_REQUEST_IMAGES = 10;
+    private static final long MAX_REPORT_IMAGES = 10;
+
+    private final ImageRepository repository;
+    private final ImageValidator validator;
+
+<span class="nc" id="L29">    public ImageStorageService(ImageRepository repository, ImageValidator validator) {</span>
+<span class="nc" id="L30">        this.repository = repository;</span>
+<span class="nc" id="L31">        this.validator = validator;</span>
+<span class="nc" id="L32">    }</span>
+
+    public ImageResponseDTO saveImage(UUID rootId, ImageType tipo, MultipartFile file, String referenciaExterna) throws IOException {
+<span class="nc bnc" id="L35" title="All 2 branches missed.">        if (rootId == null) {</span>
+<span class="nc" id="L36">            throw new InvalidImageException(&quot;rootId es obligatorio&quot;);</span>
+        }
+<span class="nc bnc" id="L38" title="All 2 branches missed.">        if (tipo == null) {</span>
+<span class="nc" id="L39">            throw new InvalidImageException(&quot;El tipo de imagen es obligatorio&quot;);</span>
+        }
+<span class="nc bnc" id="L41" title="All 4 branches missed.">        if (file == null || file.isEmpty()) {</span>
+<span class="nc" id="L42">            throw new InvalidImageException(&quot;El archivo de imagen no puede estar vacio&quot;);</span>
+        }
+
+<span class="nc" id="L45">        byte[] bytes = file.getBytes();</span>
+        String contentType;
+        try {
+<span class="nc" id="L48">            contentType = validator.validateAndDetectContentType(bytes);</span>
+<span class="nc" id="L49">        } catch (IllegalArgumentException ex) {</span>
+<span class="nc" id="L50">            throw new InvalidImageException(ex.getMessage());</span>
+<span class="nc" id="L51">        }</span>
+
+        // Reglas de cuotas y actualizacion segun el tipo
+<span class="nc bnc" id="L54" title="All 2 branches missed.">        if (tipo == ImageType.PROFILE) {</span>
+            // Perfil: solo 1 activa por usuario. Desactivar anteriores.
+<span class="nc" id="L56">            repository.findFirstByRootIdAndTipoAndActivoTrueOrderByFechaCargaDesc(rootId, ImageType.PROFILE)</span>
+<span class="nc" id="L57">                    .ifPresent(prev -&gt; {</span>
+<span class="nc" id="L58">                        prev.setActivo(false);</span>
+<span class="nc" id="L59">                        repository.save(prev);</span>
+<span class="nc" id="L60">                    });</span>
+<span class="nc bnc" id="L61" title="All 2 branches missed.">        } else if (tipo == ImageType.REQUEST) {</span>
+<span class="nc" id="L62">            long currentCount = repository.countByRootIdAndTipoAndActivoTrue(rootId, ImageType.REQUEST);</span>
+<span class="nc bnc" id="L63" title="All 2 branches missed.">            if (currentCount &gt;= MAX_REQUEST_IMAGES) {</span>
+<span class="nc" id="L64">                throw new ImageQuotaExceededException(&quot;Se ha alcanzado el maximo de &quot; + MAX_REQUEST_IMAGES + &quot; imagenes para esta solicitud&quot;);</span>
+            }
+<span class="nc bnc" id="L66" title="All 2 branches missed.">        } else if (tipo == ImageType.REPORT) {</span>
+<span class="nc" id="L67">            long currentCount = repository.countByRootIdAndTipoAndActivoTrue(rootId, ImageType.REPORT);</span>
+<span class="nc bnc" id="L68" title="All 2 branches missed.">            if (currentCount &gt;= MAX_REPORT_IMAGES) {</span>
+<span class="nc" id="L69">                throw new ImageQuotaExceededException(&quot;Se ha alcanzado el maximo de &quot; + MAX_REPORT_IMAGES + &quot; imagenes para este reporte&quot;);</span>
+            }
+        }
+
+<span class="nc bnc" id="L73" title="All 2 branches missed.">        String fileName = file.getOriginalFilename() != null ? file.getOriginalFilename() : &quot;image.bin&quot;;</span>
+<span class="nc" id="L74">        UUID imageId = UUID.randomUUID();</span>
+
+<span class="nc" id="L76">        ImageDocument doc = new ImageDocument(</span>
+                imageId,
+                rootId,
+                tipo,
+                fileName,
+                contentType,
+<span class="nc" id="L82">                file.getSize(),</span>
+                bytes,
+<span class="nc" id="L84">                LocalDateTime.now(),</span>
+                referenciaExterna
+        );
+
+<span class="nc" id="L88">        ImageDocument saved = repository.save(doc);</span>
+<span class="nc" id="L89">        return toDTO(saved);</span>
+    }
+
+    public List&lt;ImageResponseDTO&gt; saveBatchImages(UUID rootId, ImageType tipo, List&lt;MultipartFile&gt; files, String referenciaExterna) throws IOException {
+<span class="nc bnc" id="L93" title="All 2 branches missed.">        if (rootId == null) {</span>
+<span class="nc" id="L94">            throw new InvalidImageException(&quot;rootId es obligatorio&quot;);</span>
+        }
+<span class="nc bnc" id="L96" title="All 2 branches missed.">        if (tipo == null) {</span>
+<span class="nc" id="L97">            throw new InvalidImageException(&quot;El tipo de imagen es obligatorio&quot;);</span>
+        }
+<span class="nc bnc" id="L99" title="All 4 branches missed.">        if (files == null || files.isEmpty()) {</span>
+<span class="nc" id="L100">            return List.of();</span>
+        }
+
+<span class="nc bnc" id="L103" title="All 4 branches missed.">        List&lt;MultipartFile&gt; validFiles = files.stream().filter(f -&gt; f != null &amp;&amp; !f.isEmpty()).toList();</span>
+<span class="nc bnc" id="L104" title="All 2 branches missed.">        if (validFiles.isEmpty()) {</span>
+<span class="nc" id="L105">            return List.of();</span>
+        }
+
+<span class="nc bnc" id="L108" title="All 2 branches missed.">        long maxAllowed = (tipo == ImageType.REQUEST) ? MAX_REQUEST_IMAGES : MAX_REPORT_IMAGES;</span>
+<span class="nc" id="L109">        long currentCount = repository.countByRootIdAndTipoAndActivoTrue(rootId, tipo);</span>
+<span class="nc bnc" id="L110" title="All 2 branches missed.">        if (currentCount + validFiles.size() &gt; maxAllowed) {</span>
+<span class="nc" id="L111">            throw new ImageQuotaExceededException(&quot;El total de imagenes superaria el limite permitido de &quot; + maxAllowed);</span>
+        }
+
+<span class="nc" id="L114">        List&lt;ImageResponseDTO&gt; result = new ArrayList&lt;&gt;();</span>
+<span class="nc bnc" id="L115" title="All 2 branches missed.">        for (MultipartFile f : validFiles) {</span>
+<span class="nc" id="L116">            result.add(saveImage(rootId, tipo, f, referenciaExterna));</span>
+<span class="nc" id="L117">        }</span>
+<span class="nc" id="L118">        return result;</span>
+    }
+
+    public ImageDocument getImageById(UUID id) {
+<span class="nc" id="L122">        return repository.findByIdAndActivoTrue(id)</span>
+<span class="nc" id="L123">                .orElseThrow(() -&gt; new ImageNotFoundException(&quot;Imagen no encontrada con id: &quot; + id));</span>
+    }
+
+    public List&lt;ImageResponseDTO&gt; getImagesByRootId(UUID rootId, ImageType tipo) {
+<span class="nc bnc" id="L127" title="All 2 branches missed.">        if (rootId == null) {</span>
+<span class="nc" id="L128">            throw new InvalidImageException(&quot;rootId no puede ser nulo&quot;);</span>
+        }
+<span class="nc bnc" id="L130" title="All 2 branches missed.">        List&lt;ImageDocument&gt; list = (tipo != null)</span>
+<span class="nc" id="L131">                ? repository.findByRootIdAndTipoAndActivoTrue(rootId, tipo)</span>
+<span class="nc" id="L132">                : repository.findByRootIdAndActivoTrue(rootId);</span>
+<span class="nc" id="L133">        return list.stream().map(this::toDTO).toList();</span>
+    }
+
+    public void deleteImage(UUID id, UUID requestingUserId, boolean isAdmin) {
+<span class="nc" id="L137">        ImageDocument doc = getImageById(id);</span>
+        // Si no es admin y la imagen es de perfil pero no es su dueno: 404
+<span class="nc bnc" id="L139" title="All 8 branches missed.">        if (!isAdmin &amp;&amp; doc.getTipo() == ImageType.PROFILE &amp;&amp; requestingUserId != null &amp;&amp; !doc.getRootId().equals(requestingUserId)) {</span>
+<span class="nc" id="L140">            throw new ImageNotFoundException(&quot;Imagen no encontrada con id: &quot; + id);</span>
+        }
+<span class="nc" id="L142">        doc.setActivo(false);</span>
+<span class="nc" id="L143">        repository.save(doc);</span>
+<span class="nc" id="L144">    }</span>
+
+    public ImageResponseDTO toDTO(ImageDocument doc) {
+<span class="nc" id="L147">        String downloadUrl = &quot;/api/v1/images/&quot; + doc.getId();</span>
+<span class="nc" id="L148">        return new ImageResponseDTO(</span>
+<span class="nc" id="L149">                doc.getId(),</span>
+<span class="nc" id="L150">                doc.getRootId(),</span>
+<span class="nc" id="L151">                doc.getTipo(),</span>
+<span class="nc" id="L152">                doc.getNombre(),</span>
+<span class="nc" id="L153">                doc.getTipoContenido(),</span>
+<span class="nc" id="L154">                doc.getTamano(),</span>
+<span class="nc" id="L155">                doc.getFechaCarga(),</span>
+<span class="nc" id="L156">                doc.getReferenciaExterna(),</span>
+                downloadUrl
+        );
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.13.202504020838</span></div></body></html>
