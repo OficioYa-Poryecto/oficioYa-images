@@ -20,5 +20,7 @@ public record ImageResponseDTO(
         LocalDateTime fechaCarga,
         String referenciaExterna,
         /** URL relativa para descargar directamente la imagen */
-        String url
+        String url,
+        /** Id del usuario que subio la imagen (null en imagenes antiguas) */
+        UUID subidoPor
 ) {}

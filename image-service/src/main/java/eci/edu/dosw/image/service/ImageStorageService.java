@@ -1,6 +1,7 @@
 package eci.edu.dosw.image.service;
 
 import eci.edu.dosw.image.dto.ImageResponseDTO;
+import eci.edu.dosw.image.exception.ImageAccessDeniedException;
 import eci.edu.dosw.image.exception.ImageNotFoundException;
 import eci.edu.dosw.image.exception.ImageQuotaExceededException;
 import eci.edu.dosw.image.exception.InvalidImageException;
@@ -20,9 +21,6 @@ import java.util.UUID;
 @Service
 public class ImageStorageService {
 
-    private static final long MAX_REQUEST_IMAGES = 10;
-    private static final long MAX_REPORT_IMAGES = 10;
-
     private final ImageRepository repository;
     private final ImageValidator validator;
 
@@ -31,16 +29,18 @@ public class ImageStorageService {
         this.validator = validator;
     }
 
-    public ImageResponseDTO saveImage(UUID rootId, ImageType tipo, MultipartFile file, String referenciaExterna) throws IOException {
-        if (rootId == null) {
-            throw new InvalidImageException("rootId es obligatorio");
-        }
-        if (tipo == null) {
-            throw new InvalidImageException("El tipo de imagen es obligatorio");
-        }
+    /**
+     * Guarda una imagen.
+     * @param requesterId usuario autenticado que sube la imagen (sub del JWT)
+     * @param isAdmin     si el usuario tiene rol ADMIN
+     */
+    public ImageResponseDTO saveImage(UUID rootId, ImageType tipo, MultipartFile file, String referenciaExterna,
+                                      UUID requesterId, boolean isAdmin) throws IOException {
+        validarParametros(rootId, tipo);
         if (file == null || file.isEmpty()) {
             throw new InvalidImageException("El archivo de imagen no puede estar vacio");
         }
+        verificarPermisoDeSubida(rootId, tipo, requesterId, isAdmin);
 
         byte[] bytes = file.getBytes();
         String contentType;
@@ -50,31 +50,21 @@ public class ImageStorageService {
             throw new InvalidImageException(ex.getMessage());
         }
 
-        // Reglas de cuotas y actualizacion segun el tipo
-        if (tipo == ImageType.PROFILE) {
-            // Perfil: solo 1 activa por usuario. Desactivar anteriores.
-            repository.findFirstByRootIdAndTipoAndActivoTrueOrderByFechaCargaDesc(rootId, ImageType.PROFILE)
+        if (tipo.replacesPrevious()) {
+            // Perfil: solo 1 activa por usuario. La nueva reemplaza a la anterior.
+            repository.findFirstByRootIdAndTipoAndActivoTrueOrderByFechaCargaDesc(rootId, tipo)
                     .ifPresent(prev -> {
                         prev.setActivo(false);
                         repository.save(prev);
                     });
-        } else if (tipo == ImageType.REQUEST) {
-            long currentCount = repository.countByRootIdAndTipoAndActivoTrue(rootId, ImageType.REQUEST);
-            if (currentCount >= MAX_REQUEST_IMAGES) {
-                throw new ImageQuotaExceededException("Se ha alcanzado el maximo de " + MAX_REQUEST_IMAGES + " imagenes para esta solicitud");
-            }
-        } else if (tipo == ImageType.REPORT) {
-            long currentCount = repository.countByRootIdAndTipoAndActivoTrue(rootId, ImageType.REPORT);
-            if (currentCount >= MAX_REPORT_IMAGES) {
-                throw new ImageQuotaExceededException("Se ha alcanzado el maximo de " + MAX_REPORT_IMAGES + " imagenes para este reporte");
-            }
+        } else if (repository.countByRootIdAndTipoAndActivoTrue(rootId, tipo) >= tipo.getMaxActive()) {
+            throw new ImageQuotaExceededException(
+                    "Se ha alcanzado el maximo de " + tipo.getMaxActive() + " imagenes de tipo " + tipo);
         }
 
         String fileName = file.getOriginalFilename() != null ? file.getOriginalFilename() : "image.bin";
-        UUID imageId = UUID.randomUUID();
-
         ImageDocument doc = new ImageDocument(
-                imageId,
+                UUID.randomUUID(),
                 rootId,
                 tipo,
                 fileName,
@@ -84,36 +74,39 @@ public class ImageStorageService {
                 LocalDateTime.now(),
                 referenciaExterna
         );
-
-        ImageDocument saved = repository.save(doc);
-        return toDTO(saved);
+        doc.setSubidoPor(requesterId);
+        return toDTO(repository.save(doc));
     }
 
-    public List<ImageResponseDTO> saveBatchImages(UUID rootId, ImageType tipo, List<MultipartFile> files, String referenciaExterna) throws IOException {
-        if (rootId == null) {
-            throw new InvalidImageException("rootId es obligatorio");
-        }
-        if (tipo == null) {
-            throw new InvalidImageException("El tipo de imagen es obligatorio");
-        }
+    public List<ImageResponseDTO> saveBatchImages(UUID rootId, ImageType tipo, List<MultipartFile> files,
+                                                  String referenciaExterna, UUID requesterId, boolean isAdmin)
+            throws IOException {
+        validarParametros(rootId, tipo);
         if (files == null || files.isEmpty()) {
             return List.of();
         }
-
         List<MultipartFile> validFiles = files.stream().filter(f -> f != null && !f.isEmpty()).toList();
         if (validFiles.isEmpty()) {
             return List.of();
         }
+        verificarPermisoDeSubida(rootId, tipo, requesterId, isAdmin);
 
-        long maxAllowed = (tipo == ImageType.REQUEST) ? MAX_REQUEST_IMAGES : MAX_REPORT_IMAGES;
-        long currentCount = repository.countByRootIdAndTipoAndActivoTrue(rootId, tipo);
-        if (currentCount + validFiles.size() > maxAllowed) {
-            throw new ImageQuotaExceededException("El total de imagenes superaria el limite permitido de " + maxAllowed);
+        if (tipo.replacesPrevious()) {
+            if (validFiles.size() > 1) {
+                throw new InvalidImageException("Solo se puede subir una imagen de tipo " + tipo);
+            }
+        } else {
+            long currentCount = repository.countByRootIdAndTipoAndActivoTrue(rootId, tipo);
+            if (currentCount + validFiles.size() > tipo.getMaxActive()) {
+                throw new ImageQuotaExceededException(
+                        "El total de imagenes superaria el limite permitido de " + tipo.getMaxActive()
+                                + " para el tipo " + tipo);
+            }
         }
 
         List<ImageResponseDTO> result = new ArrayList<>();
         for (MultipartFile f : validFiles) {
-            result.add(saveImage(rootId, tipo, f, referenciaExterna));
+            result.add(saveImage(rootId, tipo, f, referenciaExterna, requesterId, isAdmin));
         }
         return result;
     }
@@ -133,11 +126,11 @@ public class ImageStorageService {
         return list.stream().map(this::toDTO).toList();
     }
 
-    public void deleteImage(UUID id, UUID requestingUserId, boolean isAdmin) {
+    /** Borrado logico: solo quien subio la imagen (o el dueno de la foto de perfil) o un ADMIN. */
+    public void deleteImage(UUID id, UUID requesterId, boolean isAdmin) {
         ImageDocument doc = getImageById(id);
-        // Si no es admin y la imagen es de perfil pero no es su dueno: 404
-        if (!isAdmin && doc.getTipo() == ImageType.PROFILE && requestingUserId != null && !doc.getRootId().equals(requestingUserId)) {
-            throw new ImageNotFoundException("Imagen no encontrada con id: " + id);
+        if (!isAdmin && !esDueno(doc, requesterId)) {
+            throw new ImageAccessDeniedException("Solo quien subio la imagen o un ADMIN puede borrarla");
         }
         doc.setActivo(false);
         repository.save(doc);
@@ -154,7 +147,36 @@ public class ImageStorageService {
                 doc.getTamano(),
                 doc.getFechaCarga(),
                 doc.getReferenciaExterna(),
-                downloadUrl
+                downloadUrl,
+                doc.getSubidoPor()
         );
+    }
+
+    private static void validarParametros(UUID rootId, ImageType tipo) {
+        if (rootId == null) {
+            throw new InvalidImageException("rootId es obligatorio");
+        }
+        if (tipo == null) {
+            throw new InvalidImageException("El tipo de imagen es obligatorio");
+        }
+    }
+
+    /** Hay que estar autenticado; la foto de perfil solo la sube su dueno (rootId = usuario) o un ADMIN. */
+    private static void verificarPermisoDeSubida(UUID rootId, ImageType tipo, UUID requesterId, boolean isAdmin) {
+        if (requesterId == null) {
+            throw new ImageAccessDeniedException("Se requiere un usuario autenticado para subir imagenes");
+        }
+        if (tipo == ImageType.PROFILE && !isAdmin && !rootId.equals(requesterId)) {
+            throw new ImageAccessDeniedException("Solo puedes cambiar tu propia foto de perfil");
+        }
+    }
+
+    /** Dueno = quien la subio; en fotos de perfil tambien el usuario de la foto (cubre imagenes sin subidoPor). */
+    private static boolean esDueno(ImageDocument doc, UUID requesterId) {
+        if (requesterId == null) {
+            return false;
+        }
+        return requesterId.equals(doc.getSubidoPor())
+                || (doc.getTipo() == ImageType.PROFILE && requesterId.equals(doc.getRootId()));
     }
 }

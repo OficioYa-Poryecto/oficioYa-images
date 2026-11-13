@@ -3,6 +3,7 @@ package eci.edu.dosw.image.security;
 import eci.edu.dosw.image.controller.GlobalExceptionHandler;
 import eci.edu.dosw.image.controller.ImageController;
 import eci.edu.dosw.image.dto.ImageResponseDTO;
+import eci.edu.dosw.image.exception.ImageAccessDeniedException;
 import eci.edu.dosw.image.model.ImageDocument;
 import eci.edu.dosw.image.model.ImageType;
 import eci.edu.dosw.image.service.ImageStorageService;
@@ -27,11 +28,13 @@ import java.util.UUID;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.options;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -69,7 +72,7 @@ class SecurityConfigTest {
 
     private ImageResponseDTO dto(UUID id, UUID rootId) {
         return new ImageResponseDTO(id, rootId, ImageType.PROFILE, "a.jpg", "image/jpeg", 4L,
-                LocalDateTime.now(), null, "/api/v1/images/" + id);
+                LocalDateTime.now(), null, "/api/v1/images/" + id, null);
     }
 
     @Test
@@ -138,7 +141,7 @@ class SecurityConfigTest {
     void subirConTokenValidoDevuelve201() throws Exception {
         UUID userId = UUID.randomUUID();
         UUID imageId = UUID.randomUUID();
-        when(service.saveImage(eq(userId), eq(ImageType.PROFILE), any(), isNull()))
+        when(service.saveImage(eq(userId), eq(ImageType.PROFILE), any(), isNull(), eq(userId), eq(false)))
                 .thenReturn(dto(imageId, userId));
 
         mvc.perform(multipart("/api/v1/images")
@@ -166,6 +169,37 @@ class SecurityConfigTest {
                 .andExpect(status().isNoContent());
 
         verify(service).deleteImage(id, adminId, true);
+    }
+
+    @Test
+    void borrarImagenAjenaDevuelve403() throws Exception {
+        UUID id = UUID.randomUUID();
+        UUID userId = UUID.randomUUID();
+        doThrow(new ImageAccessDeniedException("Solo quien subio la imagen o un ADMIN puede borrarla"))
+                .when(service).deleteImage(id, userId, false);
+
+        mvc.perform(delete("/api/v1/images/" + id)
+                        .header("Authorization", "Bearer " + token(userId, "TRABAJADOR")))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.status").value(403));
+    }
+
+    @Test
+    void corsPermiteElOrigenConfigurado() throws Exception {
+        mvc.perform(options("/api/v1/images")
+                        .header("Origin", "http://localhost:5173")
+                        .header("Access-Control-Request-Method", "POST")
+                        .header("Access-Control-Request-Headers", "Authorization"))
+                .andExpect(status().isOk())
+                .andExpect(header().string("Access-Control-Allow-Origin", "http://localhost:5173"));
+    }
+
+    @Test
+    void corsRechazaOrigenesNoConfigurados() throws Exception {
+        mvc.perform(options("/api/v1/images")
+                        .header("Origin", "https://sitio-ajeno.com")
+                        .header("Access-Control-Request-Method", "POST"))
+                .andExpect(status().isForbidden());
     }
 
     @Test

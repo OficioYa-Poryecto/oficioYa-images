@@ -55,41 +55,50 @@ public class ImageController {
         return ResponseEntity.ok(storageService.getImagesByRootId(rootId, tipo));
     }
 
-    @Operation(summary = "Subir una imagen individual (PROFILE, REQUEST o REPORT)")
+    @Operation(summary = "Subir una imagen individual",
+            description = "Tipos: PROFILE (solo la propia, 1 activa), WORK (50), SERVICE_EVIDENCE (5), REQUEST (5), REVIEW (5), REPORT (5)")
     @PostMapping(consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public ResponseEntity<ImageResponseDTO> uploadImage(
             @RequestParam("file") MultipartFile file,
             @RequestParam("rootId") UUID rootId,
             @RequestParam("tipo") ImageType tipo,
-            @RequestParam(value = "referenciaExterna", required = false) String referenciaExterna) throws IOException {
+            @RequestParam(value = "referenciaExterna", required = false) String referenciaExterna,
+            Authentication auth) throws IOException {
 
-        ImageResponseDTO response = storageService.saveImage(rootId, tipo, file, referenciaExterna);
+        ImageResponseDTO response = storageService.saveImage(rootId, tipo, file, referenciaExterna,
+                usuario(auth), esAdmin(auth));
         return ResponseEntity.status(HttpStatus.CREATED).body(response);
     }
 
-    @Operation(summary = "Subir multiples imagenes en lote (0 o mas para solicitudes o reportes)")
+    @Operation(summary = "Subir multiples imagenes en lote",
+            description = "Respeta el limite de cada tipo; PROFILE solo admite una imagen")
     @PostMapping(value = "/batch", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public ResponseEntity<List<ImageResponseDTO>> uploadBatch(
             @RequestParam("files") List<MultipartFile> files,
             @RequestParam("rootId") UUID rootId,
             @RequestParam("tipo") ImageType tipo,
-            @RequestParam(value = "referenciaExterna", required = false) String referenciaExterna) throws IOException {
+            @RequestParam(value = "referenciaExterna", required = false) String referenciaExterna,
+            Authentication auth) throws IOException {
 
-        List<ImageResponseDTO> response = storageService.saveBatchImages(rootId, tipo, files, referenciaExterna);
+        List<ImageResponseDTO> response = storageService.saveBatchImages(rootId, tipo, files, referenciaExterna,
+                usuario(auth), esAdmin(auth));
         return ResponseEntity.status(HttpStatus.CREATED).body(response);
     }
 
-    @Operation(summary = "Borrado logico de imagen")
+    @Operation(summary = "Borrado logico de imagen", description = "Solo quien la subio o un ADMIN")
     @DeleteMapping("/{id}")
     public ResponseEntity<Void> deleteImage(@PathVariable UUID id, Authentication auth) {
-        UUID requestingUserId = null;
-        boolean isAdmin = false;
-        if (auth != null && auth.getPrincipal() instanceof UUID userId) {
-            requestingUserId = userId;
-            isAdmin = auth.getAuthorities().stream()
-                    .anyMatch(a -> a.getAuthority().equals("ROLE_ADMIN"));
-        }
-        storageService.deleteImage(id, requestingUserId, isAdmin);
+        storageService.deleteImage(id, usuario(auth), esAdmin(auth));
         return ResponseEntity.noContent().build();
+    }
+
+    /** Id del usuario autenticado (sub del JWT), o null si no hay sesion */
+    private static UUID usuario(Authentication auth) {
+        return (auth != null && auth.getPrincipal() instanceof UUID userId) ? userId : null;
+    }
+
+    private static boolean esAdmin(Authentication auth) {
+        return auth != null && auth.getAuthorities().stream()
+                .anyMatch(a -> "ROLE_ADMIN".equals(a.getAuthority()));
     }
 }

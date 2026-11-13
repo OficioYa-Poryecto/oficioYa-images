@@ -13,10 +13,7 @@ import org.springframework.stereotype.Component;
 public class ImageValidator {
 
     static final long MAX_FILE_SIZE = 5L * 1024 * 1024; // 5 MB
-
-    // Cuotas por tipo de imagen
-    static final long MAX_REQUEST_IMAGES = 10;
-    static final long MAX_REPORT_IMAGES = 10;
+    // Las cuotas por tipo de imagen viven en ImageType
 
     /**
      * Verifica tamano y detecta el Content-Type real del archivo.

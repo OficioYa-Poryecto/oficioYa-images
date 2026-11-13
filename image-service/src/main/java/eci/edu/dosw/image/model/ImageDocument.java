@@ -47,6 +47,9 @@ public class ImageDocument {
     /** false = borrado logico */
     private boolean activo;
 
+    /** Id del usuario (sub del JWT) que subio la imagen; se usa para saber quien la puede borrar */
+    private UUID subidoPor;
+
     public ImageDocument() {
         this.activo = true;
     }
@@ -100,4 +103,7 @@ public class ImageDocument {
 
     public boolean isActivo() { return activo; }
     public void setActivo(boolean activo) { this.activo = activo; }
+
+    public UUID getSubidoPor() { return subidoPor; }
+    public void setSubidoPor(UUID subidoPor) { this.subidoPor = subidoPor; }
 }

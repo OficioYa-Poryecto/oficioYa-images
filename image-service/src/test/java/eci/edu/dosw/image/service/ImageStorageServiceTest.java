@@ -1,6 +1,7 @@
 package eci.edu.dosw.image.service;
 
 import eci.edu.dosw.image.dto.ImageResponseDTO;
+import eci.edu.dosw.image.exception.ImageAccessDeniedException;
 import eci.edu.dosw.image.exception.ImageNotFoundException;
 import eci.edu.dosw.image.exception.ImageQuotaExceededException;
 import eci.edu.dosw.image.exception.InvalidImageException;
@@ -10,6 +11,8 @@ import eci.edu.dosw.image.repository.ImageRepository;
 import eci.edu.dosw.image.validator.ImageValidator;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
 import org.mockito.ArgumentCaptor;
 import org.springframework.mock.web.MockMultipartFile;
 
@@ -40,55 +43,127 @@ class ImageStorageServiceTest {
         service = new ImageStorageService(repository, validator);
     }
 
-    @Test
-    void guardarImagenPerfilDesactivaLaAnterior() throws IOException {
-        UUID userId = UUID.randomUUID();
-        MockMultipartFile file = new MockMultipartFile("file", "avatar.jpg", "image/jpeg", VALID_BYTES);
+    private static MockMultipartFile archivo(String nombre) {
+        return new MockMultipartFile("file", nombre, "image/jpeg", VALID_BYTES);
+    }
 
-        ImageDocument previa = new ImageDocument(UUID.randomUUID(), userId, ImageType.PROFILE, "old.jpg", "image/jpeg", 100L, VALID_BYTES, LocalDateTime.now(), null);
+    private static ImageDocument documento(UUID rootId, ImageType tipo) {
+        return new ImageDocument(UUID.randomUUID(), rootId, tipo, "img.jpg", "image/jpeg", 50L, VALID_BYTES,
+                LocalDateTime.now(), null);
+    }
+
+    // ---------- Subida ----------
+
+    @Test
+    void guardarImagenPerfilPropiaDesactivaLaAnterior() throws IOException {
+        UUID userId = UUID.randomUUID();
+        ImageDocument previa = documento(userId, ImageType.PROFILE);
         when(repository.findFirstByRootIdAndTipoAndActivoTrueOrderByFechaCargaDesc(userId, ImageType.PROFILE))
                 .thenReturn(Optional.of(previa));
 
-        ImageResponseDTO response = service.saveImage(userId, ImageType.PROFILE, file, null);
+        ImageResponseDTO response = service.saveImage(userId, ImageType.PROFILE, archivo("avatar.jpg"), null, userId, false);
 
-        assertNotNull(response);
         assertEquals(userId, response.rootId());
         assertEquals(ImageType.PROFILE, response.tipo());
+        assertEquals(userId, response.subidoPor());
         assertFalse(previa.isActivo());
         verify(repository).save(previa);
     }
 
     @Test
-    void guardarImagenSolicitudRespetaCuota() throws IOException {
-        UUID requestId = UUID.randomUUID();
-        MockMultipartFile file = new MockMultipartFile("file", "solicitud.jpg", "image/jpeg", VALID_BYTES);
+    void noSePuedeSubirLaFotoDePerfilDeOtroUsuario() {
+        UUID duenoId = UUID.randomUUID();
+        UUID otroId = UUID.randomUUID();
 
-        when(repository.countByRootIdAndTipoAndActivoTrue(requestId, ImageType.REQUEST)).thenReturn(10L);
-
-        assertThrows(ImageQuotaExceededException.class,
-                () -> service.saveImage(requestId, ImageType.REQUEST, file, null));
+        assertThrows(ImageAccessDeniedException.class,
+                () -> service.saveImage(duenoId, ImageType.PROFILE, archivo("a.jpg"), null, otroId, false));
+        verify(repository, never()).save(any());
     }
 
     @Test
-    void guardarImagenReporteRespetaCuota() throws IOException {
-        UUID reportId = UUID.randomUUID();
-        MockMultipartFile file = new MockMultipartFile("file", "reporte.jpg", "image/jpeg", VALID_BYTES);
+    void adminPuedeSubirLaFotoDePerfilDeOtroUsuario() throws IOException {
+        UUID duenoId = UUID.randomUUID();
+        UUID adminId = UUID.randomUUID();
+        when(repository.findFirstByRootIdAndTipoAndActivoTrueOrderByFechaCargaDesc(duenoId, ImageType.PROFILE))
+                .thenReturn(Optional.empty());
 
-        when(repository.countByRootIdAndTipoAndActivoTrue(reportId, ImageType.REPORT)).thenReturn(10L);
+        ImageResponseDTO response = service.saveImage(duenoId, ImageType.PROFILE, archivo("a.jpg"), null, adminId, true);
+
+        assertEquals(duenoId, response.rootId());
+        assertEquals(adminId, response.subidoPor());
+    }
+
+    @Test
+    void subirSinUsuarioAutenticadoSeRechaza() {
+        assertThrows(ImageAccessDeniedException.class,
+                () -> service.saveImage(UUID.randomUUID(), ImageType.WORK, archivo("a.jpg"), null, null, false));
+    }
+
+    @Test
+    void guardarImagenRegistraQuienLaSubio() throws IOException {
+        UUID workerId = UUID.randomUUID();
+        UUID userId = UUID.randomUUID();
+        when(repository.countByRootIdAndTipoAndActivoTrue(workerId, ImageType.WORK)).thenReturn(0L);
+
+        service.saveImage(workerId, ImageType.WORK, archivo("trabajo.jpg"), "galeria", userId, false);
+
+        ArgumentCaptor<ImageDocument> captor = ArgumentCaptor.forClass(ImageDocument.class);
+        verify(repository).save(captor.capture());
+        assertEquals(userId, captor.getValue().getSubidoPor());
+        assertEquals(ImageType.WORK, captor.getValue().getTipo());
+        assertEquals("galeria", captor.getValue().getReferenciaExterna());
+    }
+
+    @ParameterizedTest
+    @EnumSource(value = ImageType.class, names = "PROFILE", mode = EnumSource.Mode.EXCLUDE)
+    void cadaTipoRespetaSuLimite(ImageType tipo) {
+        UUID rootId = UUID.randomUUID();
+        when(repository.countByRootIdAndTipoAndActivoTrue(rootId, tipo)).thenReturn((long) tipo.getMaxActive());
 
         assertThrows(ImageQuotaExceededException.class,
-                () -> service.saveImage(reportId, ImageType.REPORT, file, "REP-01"));
+                () -> service.saveImage(rootId, tipo, archivo("a.jpg"), null, UUID.randomUUID(), false));
     }
+
+    @Test
+    void debajoDelLimiteSePuedeSubir() throws IOException {
+        UUID solicitudId = UUID.randomUUID();
+        when(repository.countByRootIdAndTipoAndActivoTrue(solicitudId, ImageType.REQUEST)).thenReturn(4L);
+
+        ImageResponseDTO response = service.saveImage(solicitudId, ImageType.REQUEST, archivo("a.jpg"), null,
+                UUID.randomUUID(), false);
+
+        assertEquals(ImageType.REQUEST, response.tipo());
+    }
+
+    @Test
+    void imagenConFormatoInvalidoSeRechaza() {
+        when(validator.validateAndDetectContentType(any())).thenThrow(new IllegalArgumentException("Formato no soportado"));
+
+        InvalidImageException ex = assertThrows(InvalidImageException.class,
+                () -> service.saveImage(UUID.randomUUID(), ImageType.REVIEW, archivo("a.gif"), null, UUID.randomUUID(), false));
+        assertEquals("Formato no soportado", ex.getMessage());
+    }
+
+    @Test
+    void guardarImagenValidaParametrosObligatorios() {
+        UUID userId = UUID.randomUUID();
+        MockMultipartFile file = archivo("img.jpg");
+        assertThrows(InvalidImageException.class, () -> service.saveImage(null, ImageType.WORK, file, null, userId, false));
+        assertThrows(InvalidImageException.class, () -> service.saveImage(userId, null, file, null, userId, false));
+        assertThrows(InvalidImageException.class, () -> service.saveImage(userId, ImageType.WORK, null, null, userId, false));
+        MockMultipartFile vacio = new MockMultipartFile("file", "v.jpg", "image/jpeg", new byte[0]);
+        assertThrows(InvalidImageException.class, () -> service.saveImage(userId, ImageType.WORK, vacio, null, userId, false));
+    }
+
+    // ---------- Lote ----------
 
     @Test
     void guardarBatchGuardaMultiplesImagenes() throws IOException {
-        UUID requestId = UUID.randomUUID();
-        MockMultipartFile f1 = new MockMultipartFile("files", "img1.jpg", "image/jpeg", VALID_BYTES);
-        MockMultipartFile f2 = new MockMultipartFile("files", "img2.jpg", "image/jpeg", VALID_BYTES);
+        UUID solicitudId = UUID.randomUUID();
+        when(repository.countByRootIdAndTipoAndActivoTrue(solicitudId, ImageType.REQUEST)).thenReturn(2L);
 
-        when(repository.countByRootIdAndTipoAndActivoTrue(requestId, ImageType.REQUEST)).thenReturn(2L);
-
-        List<ImageResponseDTO> response = service.saveBatchImages(requestId, ImageType.REQUEST, List.of(f1, f2), "REF-BATCH");
+        List<ImageResponseDTO> response = service.saveBatchImages(solicitudId, ImageType.REQUEST,
+                List.of(archivo("1.jpg"), archivo("2.jpg")), "REF", UUID.randomUUID(), false);
 
         assertEquals(2, response.size());
         verify(repository, times(2)).save(any(ImageDocument.class));
@@ -96,24 +171,63 @@ class ImageStorageServiceTest {
 
     @Test
     void guardarBatchRechazaSiSuperaElTotalPermitido() {
-        UUID requestId = UUID.randomUUID();
-        MockMultipartFile f1 = new MockMultipartFile("files", "img1.jpg", "image/jpeg", VALID_BYTES);
-        MockMultipartFile f2 = new MockMultipartFile("files", "img2.jpg", "image/jpeg", VALID_BYTES);
-
-        when(repository.countByRootIdAndTipoAndActivoTrue(requestId, ImageType.REQUEST)).thenReturn(9L);
+        UUID solicitudId = UUID.randomUUID();
+        when(repository.countByRootIdAndTipoAndActivoTrue(solicitudId, ImageType.REQUEST)).thenReturn(4L);
 
         assertThrows(ImageQuotaExceededException.class,
-                () -> service.saveBatchImages(requestId, ImageType.REQUEST, List.of(f1, f2), null));
+                () -> service.saveBatchImages(solicitudId, ImageType.REQUEST,
+                        List.of(archivo("1.jpg"), archivo("2.jpg")), null, UUID.randomUUID(), false));
     }
 
     @Test
-    void obtenerImagenPorIdRetornaDocumentoSiExiste() {
-        UUID imageId = UUID.randomUUID();
-        ImageDocument doc = new ImageDocument(imageId, UUID.randomUUID(), ImageType.PROFILE, "img.jpg", "image/jpeg", 50L, VALID_BYTES, LocalDateTime.now(), null);
-        when(repository.findByIdAndActivoTrue(imageId)).thenReturn(Optional.of(doc));
+    void batchDePerfilSoloAdmiteUnaImagen() {
+        UUID userId = UUID.randomUUID();
 
-        ImageDocument resultado = service.getImageById(imageId);
-        assertEquals(imageId, resultado.getId());
+        assertThrows(InvalidImageException.class,
+                () -> service.saveBatchImages(userId, ImageType.PROFILE,
+                        List.of(archivo("1.jpg"), archivo("2.jpg")), null, userId, false));
+    }
+
+    @Test
+    void batchDePerfilConUnaImagenFunciona() throws IOException {
+        UUID userId = UUID.randomUUID();
+        when(repository.findFirstByRootIdAndTipoAndActivoTrueOrderByFechaCargaDesc(userId, ImageType.PROFILE))
+                .thenReturn(Optional.empty());
+
+        List<ImageResponseDTO> response = service.saveBatchImages(userId, ImageType.PROFILE,
+                List.of(archivo("1.jpg")), null, userId, false);
+
+        assertEquals(1, response.size());
+    }
+
+    @Test
+    void batchDePerfilAjenoSeRechaza() {
+        assertThrows(ImageAccessDeniedException.class,
+                () -> service.saveBatchImages(UUID.randomUUID(), ImageType.PROFILE,
+                        List.of(archivo("1.jpg")), null, UUID.randomUUID(), false));
+    }
+
+    @Test
+    void batchVacioONuloDevuelveListaVacia() throws IOException {
+        UUID rootId = UUID.randomUUID();
+        UUID userId = UUID.randomUUID();
+        MockMultipartFile vacio = new MockMultipartFile("files", "v.jpg", "image/jpeg", new byte[0]);
+
+        assertTrue(service.saveBatchImages(rootId, ImageType.WORK, null, null, userId, false).isEmpty());
+        assertTrue(service.saveBatchImages(rootId, ImageType.WORK, List.of(), null, userId, false).isEmpty());
+        assertTrue(service.saveBatchImages(rootId, ImageType.WORK, List.of(vacio), null, userId, false).isEmpty());
+        assertThrows(InvalidImageException.class,
+                () -> service.saveBatchImages(null, ImageType.WORK, List.of(archivo("a.jpg")), null, userId, false));
+    }
+
+    // ---------- Consulta ----------
+
+    @Test
+    void obtenerImagenPorIdRetornaDocumentoSiExiste() {
+        ImageDocument doc = documento(UUID.randomUUID(), ImageType.PROFILE);
+        when(repository.findByIdAndActivoTrue(doc.getId())).thenReturn(Optional.of(doc));
+
+        assertEquals(doc.getId(), service.getImageById(doc.getId()).getId());
     }
 
     @Test
@@ -125,59 +239,80 @@ class ImageStorageServiceTest {
     }
 
     @Test
-    void listarPorRootIdFiltraCorrectamente() {
+    void listarPorRootIdFiltraPorTipo() {
         UUID rootId = UUID.randomUUID();
-        ImageDocument doc = new ImageDocument(UUID.randomUUID(), rootId, ImageType.REQUEST, "img.jpg", "image/jpeg", 50L, VALID_BYTES, LocalDateTime.now(), null);
-        when(repository.findByRootIdAndTipoAndActivoTrue(rootId, ImageType.REQUEST)).thenReturn(List.of(doc));
+        when(repository.findByRootIdAndTipoAndActivoTrue(rootId, ImageType.REQUEST))
+                .thenReturn(List.of(documento(rootId, ImageType.REQUEST)));
 
         List<ImageResponseDTO> list = service.getImagesByRootId(rootId, ImageType.REQUEST);
+
         assertEquals(1, list.size());
         assertEquals(rootId, list.get(0).rootId());
     }
 
     @Test
-    void eliminarImagenAplicaBorradoLogico() {
-        UUID imageId = UUID.randomUUID();
-        UUID userId = UUID.randomUUID();
-        ImageDocument doc = new ImageDocument(imageId, userId, ImageType.PROFILE, "img.jpg", "image/jpeg", 50L, VALID_BYTES, LocalDateTime.now(), null);
-        when(repository.findByIdAndActivoTrue(imageId)).thenReturn(Optional.of(doc));
+    void listarPorRootIdSinTipoDevuelveTodas() {
+        UUID rootId = UUID.randomUUID();
+        when(repository.findByRootIdAndActivoTrue(rootId))
+                .thenReturn(List.of(documento(rootId, ImageType.WORK), documento(rootId, ImageType.SERVICE_EVIDENCE)));
 
-        service.deleteImage(imageId, userId, false);
+        assertEquals(2, service.getImagesByRootId(rootId, null).size());
+        assertThrows(InvalidImageException.class, () -> service.getImagesByRootId(null, null));
+    }
+
+    // ---------- Borrado ----------
+
+    @Test
+    void quienSubioLaImagenPuedeBorrarla() {
+        UUID userId = UUID.randomUUID();
+        ImageDocument doc = documento(UUID.randomUUID(), ImageType.WORK);
+        doc.setSubidoPor(userId);
+        when(repository.findByIdAndActivoTrue(doc.getId())).thenReturn(Optional.of(doc));
+
+        service.deleteImage(doc.getId(), userId, false);
 
         assertFalse(doc.isActivo());
         verify(repository).save(doc);
     }
 
     @Test
-    void eliminarImagenPerfilDeOtroUsuarioLanzaNotFound() {
-        UUID imageId = UUID.randomUUID();
-        UUID ownerId = UUID.randomUUID();
-        UUID attackerId = UUID.randomUUID();
-        ImageDocument doc = new ImageDocument(imageId, ownerId, ImageType.PROFILE, "img.jpg", "image/jpeg", 50L, VALID_BYTES, LocalDateTime.now(), null);
-        when(repository.findByIdAndActivoTrue(imageId)).thenReturn(Optional.of(doc));
+    void otroUsuarioNoPuedeBorrarUnaImagenAjena() {
+        ImageDocument doc = documento(UUID.randomUUID(), ImageType.REQUEST);
+        doc.setSubidoPor(UUID.randomUUID());
+        when(repository.findByIdAndActivoTrue(doc.getId())).thenReturn(Optional.of(doc));
 
-        assertThrows(ImageNotFoundException.class, () -> service.deleteImage(imageId, attackerId, false));
+        assertThrows(ImageAccessDeniedException.class, () -> service.deleteImage(doc.getId(), UUID.randomUUID(), false));
+        assertTrue(doc.isActivo());
+    }
+
+    @Test
+    void elDuenoDeLaFotoDePerfilPuedeBorrarlaAunqueNoTengaSubidoPor() {
+        UUID userId = UUID.randomUUID();
+        ImageDocument doc = documento(userId, ImageType.PROFILE);
+        when(repository.findByIdAndActivoTrue(doc.getId())).thenReturn(Optional.of(doc));
+
+        service.deleteImage(doc.getId(), userId, false);
+
+        assertFalse(doc.isActivo());
+    }
+
+    @Test
+    void sinUsuarioNoSePuedeBorrar() {
+        ImageDocument doc = documento(UUID.randomUUID(), ImageType.REVIEW);
+        when(repository.findByIdAndActivoTrue(doc.getId())).thenReturn(Optional.of(doc));
+
+        assertThrows(ImageAccessDeniedException.class, () -> service.deleteImage(doc.getId(), null, false));
     }
 
     @Test
     void adminPuedeEliminarCualquierImagen() {
-        UUID imageId = UUID.randomUUID();
-        UUID ownerId = UUID.randomUUID();
-        UUID adminId = UUID.randomUUID();
-        ImageDocument doc = new ImageDocument(imageId, ownerId, ImageType.PROFILE, "img.jpg", "image/jpeg", 50L, VALID_BYTES, LocalDateTime.now(), null);
-        when(repository.findByIdAndActivoTrue(imageId)).thenReturn(Optional.of(doc));
+        ImageDocument doc = documento(UUID.randomUUID(), ImageType.REPORT);
+        doc.setSubidoPor(UUID.randomUUID());
+        when(repository.findByIdAndActivoTrue(doc.getId())).thenReturn(Optional.of(doc));
 
-        service.deleteImage(imageId, adminId, true);
+        service.deleteImage(doc.getId(), UUID.randomUUID(), true);
 
         assertFalse(doc.isActivo());
         verify(repository).save(doc);
-    }
-
-    @Test
-    void guardarImagenValidaParametrosObligatorios() {
-        MockMultipartFile file = new MockMultipartFile("file", "img.jpg", "image/jpeg", VALID_BYTES);
-        assertThrows(InvalidImageException.class, () -> service.saveImage(null, ImageType.PROFILE, file, null));
-        assertThrows(InvalidImageException.class, () -> service.saveImage(UUID.randomUUID(), null, file, null));
-        assertThrows(InvalidImageException.class, () -> service.saveImage(UUID.randomUUID(), ImageType.PROFILE, null, null));
     }
 }

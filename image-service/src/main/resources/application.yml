@@ -27,6 +27,10 @@ jwt:
   # Debe ser la misma clave Base64 con la que Identity firma los tokens.
   secret: ${JWT_SECRET}
 
+cors:
+  # Origenes del front separados por coma. En Azure se pone la URL del front desplegado.
+  allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:5173}
+
 springdoc:
   api-docs:
     path: /v3/api-docs
