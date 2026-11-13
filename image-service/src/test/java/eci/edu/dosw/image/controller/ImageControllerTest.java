@@ -56,7 +56,7 @@ class ImageControllerTest {
         UUID id = UUID.randomUUID();
         UUID rootId = UUID.randomUUID();
         ImageDocument doc = new ImageDocument(id, rootId, ImageType.PROFILE, "avatar.jpg", "image/jpeg", 500L, VALID_BYTES, LocalDateTime.now(), null);
-        ImageResponseDTO dto = new ImageResponseDTO(id, rootId, ImageType.PROFILE, "avatar.jpg", "image/jpeg", 500L, LocalDateTime.now(), null, "/api/v1/images/" + id);
+        ImageResponseDTO dto = new ImageResponseDTO(id, rootId, ImageType.PROFILE, "avatar.jpg", "image/jpeg", 500L, LocalDateTime.now(), null, "/api/v1/images/" + id, null);
 
         when(service.getImageById(id)).thenReturn(doc);
         when(service.toDTO(doc)).thenReturn(dto);
@@ -71,7 +71,7 @@ class ImageControllerTest {
     @Test
     void listarImagenesPorRootIdRetornaLista() throws Exception {
         UUID rootId = UUID.randomUUID();
-        ImageResponseDTO dto = new ImageResponseDTO(UUID.randomUUID(), rootId, ImageType.REQUEST, "req1.jpg", "image/jpeg", 300L, LocalDateTime.now(), null, "/api/v1/images/1");
+        ImageResponseDTO dto = new ImageResponseDTO(UUID.randomUUID(), rootId, ImageType.REQUEST, "req1.jpg", "image/jpeg", 300L, LocalDateTime.now(), null, "/api/v1/images/1", null);
 
         when(service.getImagesByRootId(eq(rootId), eq(ImageType.REQUEST))).thenReturn(List.of(dto));
 
@@ -87,8 +87,8 @@ class ImageControllerTest {
         UUID imageId = UUID.randomUUID();
         MockMultipartFile file = new MockMultipartFile("file", "test.png", "image/png", VALID_BYTES);
 
-        ImageResponseDTO dto = new ImageResponseDTO(imageId, rootId, ImageType.PROFILE, "test.png", "image/png", (long) VALID_BYTES.length, LocalDateTime.now(), null, "/api/v1/images/" + imageId);
-        when(service.saveImage(eq(rootId), eq(ImageType.PROFILE), any(), isNull())).thenReturn(dto);
+        ImageResponseDTO dto = new ImageResponseDTO(imageId, rootId, ImageType.PROFILE, "test.png", "image/png", (long) VALID_BYTES.length, LocalDateTime.now(), null, "/api/v1/images/" + imageId, null);
+        when(service.saveImage(eq(rootId), eq(ImageType.PROFILE), any(), isNull(), any(), anyBoolean())).thenReturn(dto);
 
         mvc.perform(multipart("/api/v1/images")
                         .file(file)
@@ -104,8 +104,8 @@ class ImageControllerTest {
         MockMultipartFile f1 = new MockMultipartFile("files", "test1.png", "image/png", VALID_BYTES);
         MockMultipartFile f2 = new MockMultipartFile("files", "test2.png", "image/png", VALID_BYTES);
 
-        ImageResponseDTO dto1 = new ImageResponseDTO(UUID.randomUUID(), rootId, ImageType.REQUEST, "test1.png", "image/png", 100L, LocalDateTime.now(), null, "/url1");
-        when(service.saveBatchImages(eq(rootId), eq(ImageType.REQUEST), anyList(), isNull())).thenReturn(List.of(dto1));
+        ImageResponseDTO dto1 = new ImageResponseDTO(UUID.randomUUID(), rootId, ImageType.REQUEST, "test1.png", "image/png", 100L, LocalDateTime.now(), null, "/url1", null);
+        when(service.saveBatchImages(eq(rootId), eq(ImageType.REQUEST), anyList(), isNull(), any(), anyBoolean())).thenReturn(List.of(dto1));
 
         mvc.perform(multipart("/api/v1/images/batch")
                         .file(f1)
@@ -140,7 +140,7 @@ class ImageControllerTest {
         UUID rootId = UUID.randomUUID();
         MockMultipartFile file = new MockMultipartFile("file", "test.png", "image/png", VALID_BYTES);
 
-        when(service.saveImage(any(), any(), any(), any()))
+        when(service.saveImage(any(), any(), any(), any(), any(), anyBoolean()))
                 .thenThrow(new ImageQuotaExceededException("Limite alcanzado"));
 
         mvc.perform(multipart("/api/v1/images")
