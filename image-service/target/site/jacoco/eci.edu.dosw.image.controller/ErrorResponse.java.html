@@ -2,14 +2,14 @@
 
 import java.time.LocalDateTime;
 
-<span class="nc" id="L5">public record ErrorResponse(</span>
+<span class="fc" id="L5">public record ErrorResponse(</span>
         int status,
         String error,
         String message,
         LocalDateTime timestamp
 ) {
     public ErrorResponse(int status, String error, String message) {
-<span class="nc" id="L12">        this(status, error, message, LocalDateTime.now());</span>
-<span class="nc" id="L13">    }</span>
+<span class="fc" id="L12">        this(status, error, message, LocalDateTime.now());</span>
+<span class="fc" id="L13">    }</span>
 }
 </pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.13.202504020838</span></div></body></html>
