@@ -1,19 +1,31 @@
 server:
-  port: ${PORT:8082}
+  # 8083 en local para no chocar con Worker (8082). En Azure se sobreescribe con SERVER_PORT.
+  port: ${PORT:8083}
 
 spring:
   application:
     name: image-service
+  # En local se pueden poner las variables en un archivo .env junto al pom.xml (ignorado por git)
+  config:
+    import: optional:file:.env[.properties]
+  mongodb:
+    uri: ${MONGODB_URI:mongodb://localhost:27017/oficioya_images}
+    representation:
+      # UUID en formato estandar para que otros servicios y herramientas los lean igual
+      uuid: standard
   data:
     mongodb:
-      uri: ${MONGODB_URI:mongodb://localhost:27017/oficioyaService}
+      # Crea el indice compuesto (rootId, tipo, activo) definido en ImageDocument
+      auto-index-creation: true
   servlet:
     multipart:
       max-file-size: 5MB
       max-request-size: 20MB
 
 jwt:
-  secret: ${JWT_SECRET:MDEyMzQ1Njc4OTAxMjM0NTY3ODkwMTIzNDU2Nzg5MDEyMzQ1Njc4OTAxMjM0NTY3ODkwMTIzNDU2Nzg5MDE=}
+  # Sin valor por defecto: si falta JWT_SECRET la aplicacion no arranca.
+  # Debe ser la misma clave Base64 con la que Identity firma los tokens.
+  secret: ${JWT_SECRET}
 
 springdoc:
   api-docs:
